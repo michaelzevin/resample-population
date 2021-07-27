@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+
+###########################
+### RESAMPLE POPULATION ###
+###########################
+
+# --- Import packages --- #
+import numpy as np
+import pandas as pd
+
+import argparse
+import multiprocessing
+import warnings
+import time
+from tqdm import tqdm
+import pdb
+
+from star_formation_history import StarFormationHistory
+
+# --- Argument handling --- #
+argp = argparse.ArgumentParser()
+argp.add_argument("--Nresamp", type=int, required=True, help="Number of systems to resample from the populations.")
+argp.add_argument("--population", type=str, required=True, help="Base directory to the COSMIC population you wish to resample. Will expect a directory with individual runs inside subdirectories labelled by their metallicity.")
+argp.add_argument("--method", type=str, default="truncnorm", help="Sets the method for calculating the metallicity dispersion. 'truncnorm' will use the standard truncated normal at the mean metallicity Z(z). 'corrected_truncnorm' will adjust the mean provided when defining the probability density such that it reproduces the correct mean metallicity Z(z) when the truncated normal probability density is constructed. 'illustris' will use the SFR(Z,z) from the Illustris-TNG simulation, and will supersede whatever is given in the 'sigmaZ' argument.  Default='truncnorm'.")
+argp.add_argument("--filter", type=str, help="Filter specified in utils/filters.py that downselect the bpp array. Default is None.")
+argp.add_argument("--zmin", type=float, default=0, help="Sets the lower bound of the metallicity in absolute units. Default=0.0001.")
+argp.add_argument("--zmax", type=float, default=20, help="Sets the upper bound of the metallicity in absolute units. Default=0.03.")
+argp.add_argument("--Zmin", type=float, default=0.0001, help="Sets the lower bound of the metallicity in absolute units. Default=0.0001.")
+argp.add_argument("--Zmax", type=float, default=0.03, help="Sets the upper bound of the metallicity in absolute units. Default=0.03.")
+argp.add_argument("--sigmaZ", type=float, help="Sets the metallicity dispersion for the mean metallicity relation Z(z). ")
+argp.add_argument("--mergers-only", action="store_true", help="If True, will only keep systems from the resampled population that merger within a Hubble time. Default is False.")
+argp.add_argument("--output-path", type=str, help="Location where to write resampled population to disk. Info is stored as attributes to the hdf5 file, with the resampled population in the dataset as key 'binaries'. If unspecified, will not save it.")
+argp.add_argument("-V", "--verbose", action='store_true', help="Adds verbosity.")
+args = argp.parse_args()
+
+start = time.time()
+
+# Spit out warning if using Illustris method and sigmaZ is specified
+if args.method=='illustris' and args.sigmaZ is not None:
+    warnings.warn("Warning: You specified a metallicity dispersion (sigmaZ={:0.1f}) but are using the 'illustris' method, your specified sigmaZ will be ignored.".format(args.sigmaZ))
+
+# --- Instantiate SFH class --- #
+if args.verbose:
+    print("\nInstantiating StarFormationHistory class using {:s} method...\n".format(args.method))
+SFH = StarFormationHistory(args.method, args.sigmaZ, args.zmin, args.zmax, args.Zmin, args.Zmax)
+
+# --- Draw redshifts from SFH class --- #
+if args.verbose:
+    print("\nDrawing redshifts...\n")
+SFH.draw_redshifts(args.Nresamp, sfr_mdl='2017')
+
+# --- Draw metallicities from SFH class --- #
+if args.verbose:
+    print("\nDrawing metallicities...\n")
+SFH.draw_metallicities(args.Nresamp)
+
+# --- Resample population --- #
+if args.verbose:
+    print("\nResampling population models at {:s}...\n".format(args.population))
+SFH.resample(args.population, pop_filter=args.filter, mergers_only=args.mergers_only)
+
+# --- Save to disk --- #
+if args.output_path:
+    if args.verbose:
+        print("\nSaving to disk at {:s}...\n".format(args.output_path))
+    SFH.save(args.output_path)
+
+# --- Print time --- #
+end = time.time()
+if args.verbose:
+    print("\nIt took {:0.2f}s to resample {:0.0e} systems!\n".format((end-start), args.Nresamp))
+
