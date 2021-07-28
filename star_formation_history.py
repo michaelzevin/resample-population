@@ -275,14 +275,10 @@ class StarFormationHistory:
 
 
     # --- Resampling method --- #
-    def resample(self, pop_path, pop_filter=None, mergers_only=False):
+    def resample(self, pop_path, pop_filters=None, mergers_only=False):
         """
         Resamples populations living at `pop_path` based on the drawn formation redshifts and metallicities
         """
-
-        # check that filter is specified
-        if (pop_filter is not None) and (pop_filter not in filters._filters_dict.keys()):
-            raise ValueError('The filter you specified ({:s}) is not defined in the filters function!'.format(pop_filter))
 
         # create dataframe for housing the resampled data
         df = pd.DataFrame(np.asarray([self.redshift_draws, self.met_draws]).T, columns=['z_ZAMS','Z_draw'])
@@ -317,8 +313,14 @@ class StarFormationHistory:
         for idx, Z in tqdm(enumerate(pop_mets_str), total=len(pop_mets_str)):
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
             bpp = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='bpp')
-            if pop_filter is not None:
-                bpp=filters._filters_dict[pop_filter](bpp)
+
+            # apply filters to bpp array, if specified
+            if pop_filters is not None:
+                for filt in pop_filters:
+                    if filt in filters._filters_dict.keys():
+                        bpp = filters._filters_dict[filt](bpp)
+                    else:
+                        raise ValueError('The filter you specified ({:s}) is not defined in the filters function!'.format(filt))
 
             # get point of DCO formation
             dco_form = bpp.loc[((bpp['kstar_1']==13)|(bpp['kstar_1']==14)) \
