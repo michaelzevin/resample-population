@@ -275,7 +275,7 @@ class StarFormationHistory:
 
 
     # --- Resampling method --- #
-    def resample(self, pop_path, pop_filters=None, mergers_only=False):
+    def resample(self, pop_path, pop_filters=None, mergers_only=False, extra_info=False):
         """
         Resamples populations living at `pop_path` based on the drawn formation redshifts and metallicities
         """
@@ -303,6 +303,17 @@ class StarFormationHistory:
         df['a'] = np.nan
         df['porb'] = np.nan
         df['e'] = np.nan
+        if extra_info:
+            df['secondary_born_first'] = False
+            df['Mbh1_birth'] = np.nan
+            df['Mbh1_preSMT'] = np.nan
+            df['Mbh1_postSMT'] = np.nan
+            df['porb_HeBH'] = np.nan
+            df['Mhe_HeBH'] = np.nan
+            df['Mbh1'] = np.nan
+            df['Mbh2'] = np.nan
+            df['SN_theta'] = np.nan
+
 
         # get lookback time to redshift interpolant
         z_grid = np.logspace(-5, 2, 100000)
@@ -333,8 +344,8 @@ class StarFormationHistory:
                 print("No matching systems found in the population model for Z={:s}!".format(Z))
                 continue
 
-            # random choose systems from this model
-            idxs_in_metbin = list(df.loc[df['Z_samp']==pop_mets[idx]].index)
+            # randomly choose systems from this model
+            idxs_in_metbin = np.asarray(df.loc[df['Z_samp']==pop_mets[idx]].index)
             idxs_to_sample = np.random.choice(list(dco_form.index), size=len(idxs_in_metbin), replace=True)
             dco_form_sample = dco_form.loc[idxs_to_sample]
             dco_merge_sample = dco_merge.loc[idxs_to_sample]
@@ -358,6 +369,52 @@ class StarFormationHistory:
             df.loc[idxs_in_metbin, 'porb'] = np.asarray(dco_form_sample['porb'])
             df.loc[idxs_in_metbin, 'e'] = np.asarray(dco_form_sample['ecc'])
 
+            # --- EXTRA INFO --- #
+            # get extra info for determining spins, if specified
+            if extra_info:
+                # mark small fraction of systems where the secondary is born first, just have NaNs for these for now
+                df_firstborn = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14)) | \
+                        ((bpp.kstar_1<14) & (bpp.kstar_2==14))].groupby('bin_num').head(1)
+                df_firstborn_sample = df_firstborn.loc[idxs_to_sample]
+                # find where secondary was born first
+                secondary_born_first = np.where(df_firstborn_sample['kstar_2']==14, True, False)
+                df.loc[idxs_in_metbin, 'secondary_born_first'] = secondary_born_first
+                df.loc[idxs_in_metbin[~secondary_born_first], 'Mbh1_birth'] = np.asarray(df_firstborn_sample[~secondary_born_first]['mass_1'])
+                df.loc[idxs_in_metbin[secondary_born_first], 'Mbh1_birth'] = np.asarray(df_firstborn_sample[secondary_born_first]['mass_2'])
+
+                # first-born BH mass before and after RLO (if SMT happens at all)
+                # NOTE: rlo_end will have a few more systems, since there are some where the primary collapses
+                # to a BH during RLO of its companion giant, and some other edge cases. Ignore these for now.
+                rlo_start = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14) & (bpp.evol_type==3))].groupby('bin_num').head(1)
+                rlo_end = bpp.loc[((bpp.kstar_1==14) & (bpp.evol_type==4))].groupby('bin_num').tail(1)
+                # get sampling indices that went through RLO, rest will just be NaNs for now
+                idxs_with_RLO = pd.Series(idxs_to_sample).isin(rlo_start.index.unique())
+                #idxs_with_RLO = pd.Series(idxs_with_RLO).isin(rlo_end.index.unique())
+                # now we should be good, since the mass is the same before/after RLO
+                rlo_start_sample = rlo_start.loc[idxs_to_sample[idxs_with_RLO]]
+                rlo_end_sample = rlo_end.loc[idxs_to_sample[idxs_with_RLO]]
+                df.loc[idxs_in_metbin[idxs_with_RLO], 'Mbh1_preSMT'] = np.asarray(rlo_start_sample['mass_1'])
+                df.loc[idxs_in_metbin[idxs_with_RLO], 'Mbh1_postSMT'] = np.asarray(rlo_end_sample['mass_1'])
+
+                # get the timestep prior to BBH formation, save He-star mass (FIXME: use last step before BBH or kstar=7?)
+                prior_to_BBH = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14)) | \
+                                    ((bpp.kstar_1<14) & (bpp.kstar_2==14))].groupby('bin_num').tail(1)
+                prior_to_BBH_sample = prior_to_BBH.loc[idxs_to_sample]
+                df.loc[idxs_in_metbin, 'porb_HeBH'] = np.asarray(prior_to_BBH_sample['porb'])
+                df.loc[idxs_in_metbin[~secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[~secondary_born_first]['mass_1'])
+                df.loc[idxs_in_metbin[secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[secondary_born_first]['mass_2'])
+
+                # BH masses (based on which was born first)
+                df.loc[idxs_in_metbin, 'Mbh1'] = np.asarray(dco_form_sample['mass_1'])
+                df.loc[idxs_in_metbin, 'Mbh2'] = np.asarray(dco_form_sample['mass_2'])
+
+                # get the spin tilts
+                kick_info = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='kick_info')
+                kick_info['bin_num'] = kick_info.index
+                second_SN = kick_info.groupby('bin_num').last()
+                second_SN_sample = second_SN.loc[idxs_to_sample]
+                df.loc[idxs_in_metbin, 'SN_theta'] = np.asarray(second_SN_sample['delta_theta_total'])
+
         # remove systems that merged after z=0, if specified
         if mergers_only==True:
             df = df.loc[df['tlb_merge'] > 0]
@@ -366,7 +423,10 @@ class StarFormationHistory:
             assert(all(df.isna().any())==False)
 
         # reorder columns
-        df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp']]
+        if extra_info:
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta']]
+        else:
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp']]
 
         self.resampled_pop = df
 

@@ -29,6 +29,7 @@ argp.add_argument("--Zmin", type=float, default=0.0001, help="Sets the lower bou
 argp.add_argument("--Zmax", type=float, default=0.03, help="Sets the upper bound of the metallicity in absolute units. Default=0.03.")
 argp.add_argument("--sigmaZ", type=float, help="Sets the metallicity dispersion for the mean metallicity relation Z(z). ")
 argp.add_argument("--mergers-only", action="store_true", help="If True, will only keep systems from the resampled population that merger within a Hubble time. Default is False.")
+argp.add_argument("--extra-info", action="store_true", help="If True, will also store pertinent extra info defined in the 'resample' method. Default is False.")
 argp.add_argument("--output-path", type=str, help="Location where to write resampled population to disk. Info is stored as attributes to the hdf5 file, with the resampled population in the dataset as key 'binaries'. If unspecified, will not save it.")
 argp.add_argument("-V", "--verbose", action='store_true', help="Adds verbosity.")
 args = argp.parse_args()
@@ -60,7 +61,7 @@ if args.verbose:
     if args.filter:
         print("   applying the following filters to the population:")
         print(["{:s}".format(filt) for filt in args.filter])
-SFH.resample(args.population, pop_filters=args.filter, mergers_only=args.mergers_only)
+SFH.resample(args.population, pop_filters=args.filter, mergers_only=args.mergers_only, extra_info=args.extra_info)
 
 # --- Save to disk --- #
 if args.output_path:
