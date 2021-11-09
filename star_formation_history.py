@@ -315,6 +315,9 @@ class StarFormationHistory:
             df['SN_theta'] = np.nan
 
 
+        # series for tracking the total mass sampled for each population
+        df['M_samp'] = np.nan
+
         # get lookback time to redshift interpolant
         z_grid = np.logspace(-5, 2, 100000)
         z_grid = np.insert(z_grid, 0, 0)
@@ -324,6 +327,7 @@ class StarFormationHistory:
         for idx, Z in tqdm(enumerate(pop_mets_str), total=len(pop_mets_str)):
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
             bpp = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='bpp')
+            mass_stars = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='mass_stars')
 
             # apply filters to bpp array, if specified
             if pop_filters is not None:
@@ -415,6 +419,9 @@ class StarFormationHistory:
                 second_SN_sample = second_SN.loc[idxs_to_sample]
                 df.loc[idxs_in_metbin, 'SN_theta'] = np.asarray(second_SN_sample['delta_theta_total'])
 
+            # write total mass sampled so that these can be used for weighting later
+            df.loc[idxs_in_metbin, 'M_samp'] = mass_stars
+
         # remove systems that merged after z=0, if specified
         if mergers_only==True:
             df = df.loc[df['tlb_merge'] > 0]
@@ -424,9 +431,9 @@ class StarFormationHistory:
 
         # reorder columns
         if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta','M_samp']]
         else:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','M_samp']]
 
         self.resampled_pop = df
 
