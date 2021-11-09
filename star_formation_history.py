@@ -315,8 +315,8 @@ class StarFormationHistory:
             df['SN_theta'] = np.nan
 
 
-        # series for tracking the total mass sampled for each population
-        df['M_samp'] = np.nan
+        # series for tracking the formation efficiency to be used later in weighting
+        df['Nsys_per_Msamp'] = np.nan
 
         # get lookback time to redshift interpolant
         z_grid = np.logspace(-5, 2, 100000)
@@ -420,7 +420,7 @@ class StarFormationHistory:
                 df.loc[idxs_in_metbin, 'SN_theta'] = np.asarray(second_SN_sample['delta_theta_total'])
 
             # write total mass sampled so that these can be used for weighting later
-            df.loc[idxs_in_metbin, 'M_samp'] = mass_stars
+            df.loc[idxs_in_metbin, 'Nsys_per_Msamp'] = len(dco_form)/mass_stars
 
         # remove systems that merged after z=0, if specified
         if mergers_only==True:
@@ -431,9 +431,9 @@ class StarFormationHistory:
 
         # reorder columns
         if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta','M_samp']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta','Nsys_per_Msamp']]
         else:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','M_samp']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Nsys_per_Msamp']]
 
         self.resampled_pop = df
 
