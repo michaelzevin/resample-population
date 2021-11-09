@@ -22,6 +22,7 @@ argp = argparse.ArgumentParser()
 argp.add_argument("--Nresamp", type=int, required=True, help="Number of systems to resample from the populations.")
 argp.add_argument("--population", type=str, required=True, help="Base directory to the COSMIC population you wish to resample. Will expect a directory with individual runs inside subdirectories labelled by their metallicity.")
 argp.add_argument("--method", type=str, default="truncnorm", help="Sets the method for calculating the metallicity dispersion. 'truncnorm' will use the standard truncated normal at the mean metallicity Z(z). 'corrected_truncnorm' will adjust the mean provided when defining the probability density such that it reproduces the correct mean metallicity Z(z) when the truncated normal probability density is constructed. 'illustris' will use the SFR(Z,z) from the Illustris-TNG simulation, and will supersede whatever is given in the 'sigmaZ' argument.  Default='truncnorm'.")
+argp.add_argument("--cosmo-path", type=str, help="File path for the binned stellar mass formed at each redshift/metallicity. Required if using method 'illustris'. Default=None.")
 argp.add_argument("--filter", nargs="+", help="Filter specified in utils/filters.py that downselect the bpp array. Default is None.")
 argp.add_argument("--zmin", type=float, default=0, help="Sets the lower bound of the metallicity in absolute units. Default=0.0001.")
 argp.add_argument("--zmax", type=float, default=20, help="Sets the upper bound of the metallicity in absolute units. Default=0.03.")
@@ -36,6 +37,10 @@ args = argp.parse_args()
 
 start = time.time()
 
+# Spit out warning if using Illustris method and cosmo-path not specified
+if args.method=='illustris' and args.cosmo_path is None:
+    raise NameError("You must specify a path to the cosmological simulation data if using method 'illustris'!")
+
 # Spit out warning if using Illustris method and sigmaZ is specified
 if args.method=='illustris' and args.sigmaZ is not None:
     warnings.warn("Warning: You specified a metallicity dispersion (sigmaZ={:0.1f}) but are using the 'illustris' method, your specified sigmaZ will be ignored.".format(args.sigmaZ))
@@ -43,7 +48,7 @@ if args.method=='illustris' and args.sigmaZ is not None:
 # --- Instantiate SFH class --- #
 if args.verbose:
     print("\nInstantiating StarFormationHistory class using {:s} method...\n".format(args.method))
-SFH = StarFormationHistory(args.method, args.sigmaZ, args.zmin, args.zmax, args.Zmin, args.Zmax)
+SFH = StarFormationHistory(args.method, args.sigmaZ, args.zmin, args.zmax, args.Zmin, args.Zmax, args.cosmo_path)
 
 # --- Draw redshifts from SFH class --- #
 if args.verbose:

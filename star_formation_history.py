@@ -104,7 +104,7 @@ class StarFormationHistory:
     """
     Class for determining birth redshifts and metallicities for a population of mergers
     """
-    def __init__(self, method, sigmaZ, zmin=None, zmax=None, Zmin=None, Zmax=None):
+    def __init__(self, method, sigmaZ, zmin=None, zmax=None, Zmin=None, Zmax=None, cosmo_path=None):
         # Instantiates the SFH class that will be used to draw redshifts and metallicities
         self.method = method
         self.zmin = zmin
@@ -116,7 +116,7 @@ class StarFormationHistory:
 
         ### special treament for reading in Illustris data
         if method=='illustris':
-            with h5py.File('./data/TNG100_L75n1820TNG__x-t-log_y-Z-log.hdf5', 'r') as f:
+            with h5py.File(cosmo_path, 'r') as f:
                 time_bins = f['xedges'][:]   # years
                 met_bins = f['yedges'][1:-1]   # kill the top and bottom metallicity bins, we won't need them and they go to inf
                 Mform = f['mass'][:,1:-1]   # Msun
