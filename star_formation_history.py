@@ -327,7 +327,7 @@ class StarFormationHistory:
         for idx, Z in tqdm(enumerate(pop_mets_str), total=len(pop_mets_str)):
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
             bpp = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='bpp')
-            mass_stars = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='mass_stars')
+            mass_stars = float(np.asarray(pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='mass_stars'))[-1])
 
             # apply filters to bpp array, if specified
             if pop_filters is not None:
