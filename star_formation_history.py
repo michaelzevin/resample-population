@@ -212,7 +212,7 @@ class StarFormationHistory:
             sfr_pts = sfr_z(redshift_grid, mdl=sfr_mdl)
 
         # create inverse cdf interpolant (NOTE: dNdz ignores an arbitrary normalization constant that doesn't matter)
-        dNdz_interp = interp1d(redshift_grid, sfr_pts*cosmo.differential_comoving_volume(redshift_grid)*(1+redshift_grid)**(-1))
+        dNdz_pts = sfr_pts * cosmo.differential_comoving_volume(redshift_grid) * (1+redshift_grid)**(-1)
         dNdz_cdf = cumulative_trapezoid(dNdz_pts, redshift_grid, initial=0)
         dNdz_cdf /= dNdz_cdf.max()
         dNdz_icdf_interp = interp1d(dNdz_cdf, redshift_grid, fill_value="extrapolate")
