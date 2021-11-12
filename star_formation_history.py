@@ -211,14 +211,14 @@ class StarFormationHistory:
             redshift_grid = np.linspace(self.zmin, self.zmax, 10000)
             sfr_pts = sfr_z(redshift_grid, mdl=sfr_mdl)
 
-        # create inverse cdf interpolant
-        sfr_interp = interp1d(redshift_grid, sfr_pts)
-        sfr_cdf = cumulative_trapezoid(sfr_pts, redshift_grid, initial=0)
-        sfr_cdf /= sfr_cdf.max()
-        sfr_icdf_interp = interp1d(sfr_cdf, redshift_grid, fill_value="extrapolate")
+        # create inverse cdf interpolant (NOTE: dNdz ignores an arbitrary normalization constant that doesn't matter)
+        dNdz_interp = interp1d(redshift_grid, sfr_pts*cosmo.differential_comoving_volume(redshift_grid)*(1+redshift_grid)**(-1))
+        dNdz_cdf = cumulative_trapezoid(dNdz_pts, redshift_grid, initial=0)
+        dNdz_cdf /= dNdz_cdf.max()
+        dNdz_icdf_interp = interp1d(dNdz_cdf, redshift_grid, fill_value="extrapolate")
 
         # draw from icdf
-        redshift_draws = sfr_icdf_interp(np.random.uniform(0,1, size=Nsamp))
+        redshift_draws = dNdz_icdf_interp(np.random.uniform(0,1, size=Nsamp))
         self.redshift_draws = redshift_draws
 
 
@@ -226,6 +226,8 @@ class StarFormationHistory:
         """
         Draws metallicities with cdfs constructed in log-space for metallicity
         """
+
+        # FIXME: I could change this so that mass weighting is used along with np.random.choice()
 
         if self.method=='illustris':
             # Precompute metallicity inverse CDFs for each redshift bin
