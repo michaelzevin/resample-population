@@ -59,12 +59,12 @@ if args.verbose:
     print("\nCalculating relative weights at each redshift and metallicity...\n")
     if args.filter:
         print("   applying the following filters to the population:")
+        print(["{:s}".format(filt) for filt in args.filter])
 SFH.redshift_metallicity_weights(args.population, args.filter, N_redshift_grid=1e5)
 
 # --- Resample population --- #
 if args.verbose:
     print("\nResampling population models at {:s}...".format(args.population))
-        print(["{:s}".format(filt) for filt in args.filter])
 SFH.resample(args.Nresamp, args.population, pop_filters=args.filter, mergers_only=args.mergers_only, extra_info=args.extra_info)
 
 # --- Save to disk --- #
