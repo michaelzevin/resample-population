@@ -347,6 +347,10 @@ class StarFormationHistory:
         df['porb'] = np.nan
         df['e'] = np.nan
         if extra_info:
+            df['M1_ZAMS'] = np.nan
+            df['M2_ZAMS'] = np.nan
+            df['porb_ZAMS'] = np.nan
+            df['e_ZAMS'] = np.nan
             df['secondary_born_first'] = False
             df['Mbh1_birth'] = np.nan
             df['Mbh1_preSMT'] = np.nan
@@ -366,6 +370,7 @@ class StarFormationHistory:
             # read in COSMIC data
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
             bpp = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='bpp')
+            initC = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='initCond')
             mass_stars = float(np.asarray(pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='mass_stars'))[-1])
 
             # apply filters to bpp array, if specified
@@ -415,6 +420,11 @@ class StarFormationHistory:
             # --- EXTRA INFO --- #
             # get extra info for determining spins, if specified
             if extra_info:
+                # get ZAMS properties
+                df.loc[idxs_in_metbin, 'M1_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'mass_1'])
+                df.loc[idxs_in_metbin, 'M2_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'mass_2'])
+                df.loc[idxs_in_metbin, 'porb_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'porb'])
+                df.loc[idxs_in_metbin, 'e_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'ecc'])
                 # mark small fraction of systems where the secondary is born first, just have NaNs for these for now
                 df_firstborn = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14)) | \
                         ((bpp.kstar_1<14) & (bpp.kstar_2==14))].groupby('bin_num').head(1)
@@ -467,7 +477,7 @@ class StarFormationHistory:
 
         # reorder columns
         if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta']]
         else:
             df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z']]
 
