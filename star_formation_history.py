@@ -5,6 +5,7 @@ import os
 import h5py
 import pdb
 from tqdm import tqdm
+import itertools
 
 from scipy.interpolate import interp1d
 from scipy.integrate import cumulative_trapezoid
@@ -104,7 +105,7 @@ class StarFormationHistory:
     """
     Class for determining birth redshifts and metallicities for a population of mergers
     """
-    def __init__(self, method, sigmaZ, zmin=None, zmax=None, Zmin=None, Zmax=None, cosmo_path=None):
+    def __init__(self, method, sigmaZ, zmin, zmax, Zmin, Zmax, cosmo_path=None):
         # Instantiates the SFH class that will be used to draw redshifts and metallicities
         self.method = method
         self.zmin = zmin
@@ -171,7 +172,7 @@ class StarFormationHistory:
                 Mform = np.squeeze(Mform[:, :too_metal_idx])
 
             # Make sure everything has the correct dimensions
-            assert (Mform.shape[0]==len(time_bins)-1) and (Mform.shape[0]==len(redshift_bins)-1) and (Mform.shape[1]==len(met_bins)-1), "Dimensions of bin heirhgts in Mform ({:d,:d}) do not match the time ({:d}), redshift ({:d}), and metallicity ({:d}) bins!".format(Mform.shape[0], Mform.shape[1], len(time_bins), len(redshift_bins), len(met_bins))
+            assert (Mform.shape[0]==len(time_bins)-1) and (Mform.shape[0]==len(redshift_bins)-1) and (Mform.shape[1]==len(met_bins)-1), "Dimensions of bin heights in Mform ({:d,:d}) do not match the time ({:d}), redshift ({:d}), and metallicity ({:d}) bins!".format(Mform.shape[0], Mform.shape[1], len(time_bins), len(redshift_bins), len(met_bins))
 
             # get times and metallicity bin centers (in logspace)
             times = 10**(np.log10(time_bins[:-1])+((np.log10(time_bins[1:])-np.log10(time_bins[:-1]))/2))
@@ -183,115 +184,147 @@ class StarFormationHistory:
                 redshifts.append(z_at_value(cosmo.age, t*u.yr))
             redshifts = np.asarray(redshifts)
 
-            # time duration in each bin
-            dt = time_bins[1:] - time_bins[:-1]
+            # get total SFRD at each redshift bin (units Msun / Mpc^3 / yr)
+            sfr_pts = np.sum(Mform, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
 
-            self.Mform = Mform
-            self.times = times
-            self.mets = mets
-            self.redshifts = redshifts
-            self.dt = dt
-            self.time_bins = time_bins
-            self.met_bins = met_bins
-            self.redshift_bins = redshift_bins
-
-
-    # --- Methods for drawing redshifts and metallcities --- #
-    def draw_redshifts(self, Nsamp, sfr_mdl='2017'):
-        """
-        Draws redshifts based on chosen SFH
-        """
-
-        if self.method=='illustris':
-            # reverse so that z=0 is at beginning of array
-            redshift_grid = self.redshifts[::-1]
-            sfr_pts = np.sum(self.Mform[::-1], axis=1) / self.dt[::-1] / 100**3   # simulation from 100 Mpc^3 bin
-            sfr_pts = sfr_pts
-        else:
-            redshift_grid = np.linspace(self.zmin, self.zmax, 10000)
-            sfr_pts = sfr_z(redshift_grid, mdl=sfr_mdl)
-
-        # create inverse cdf interpolant (NOTE: dNdz ignores an arbitrary normalization constant that doesn't matter)
-        dNdz_pts = sfr_pts * cosmo.differential_comoving_volume(redshift_grid) * (1+redshift_grid)**(-1)
-        dNdz_cdf = cumulative_trapezoid(dNdz_pts, redshift_grid, initial=0)
-        dNdz_cdf /= dNdz_cdf.max()
-        dNdz_icdf_interp = interp1d(dNdz_cdf, redshift_grid, fill_value="extrapolate")
-
-        # draw from icdf
-        redshift_draws = dNdz_icdf_interp(np.random.uniform(0,1, size=Nsamp))
-        self.redshift_draws = redshift_draws
-
-
-    def draw_metallicities(self, Nsamp):
-        """
-        Draws metallicities with cdfs constructed in log-space for metallicity
-        """
-
-        # FIXME: I could change this so that mass weighting is used along with np.random.choice()
-
-        if self.method=='illustris':
-            # Precompute metallicity inverse CDFs for each redshift bin
-            met_icdf_interps = []
-            for idx, metdist_at_z in enumerate(self.Mform):
-                if np.sum(metdist_at_z) != 0.0:
-                    met_cdf = cumulative_trapezoid(metdist_at_z, np.log10(self.mets), initial=0)
+            # pre-compute the metallicity CDF interpolations at each redshift bin
+            met_cdf_at_redz = []
+            for met_dist in Mform:
+                if np.sum(met_dist) != 0.0:
+                    met_cdf = cumulative_trapezoid(met_dist, np.log10(mets), initial=0)
                     met_cdf /= met_cdf.max()
-                    met_icdf_interps.append(interp1d(met_cdf, self.mets, fill_value="extrapolate"))
+                    met_cdf_interp = interp1d(np.log10(mets), met_cdf)
+                    met_cdf_at_redz.append(met_cdf_interp)
                 else:
                     # no SF at this time in any metallicity bin
-                    met_icdf_interps.append(np.nan)
+                    met_cdf_at_redz.append(np.nan)
 
-            redshift_indices = np.searchsorted(self.redshift_bins[::-1], self.redshift_draws)   # has to be ascending for searchsorted, so we're going from z=0 to z=zmax
-            redshift_indices -= 1   # convert from bins to indices needed for Mbin
-            met_icdf_interps = met_icdf_interps[::-1]   # rearrange these from z=0 to z=zmax as well
+            # store as attributes and rearrange so that low redshifts are at the front
+            self.Mform = Mform[::-1]
+            self.times = times[::-1]
+            self.mets = mets
+            self.met_cdf_at_redz = met_cdf_at_redz[::-1]
+            self.redshifts = redshifts[::-1]
+            self.dt = dt[::-1]
+            self.sfr_pts = sfr_pts[::-1]
+            self.time_bins = time_bins[::-1]
+            self.met_bins = met_bins
+            self.redshift_bins = redshift_bins[::-1]
 
-            met_draws = []
-            for idx, redz_idx in enumerate(tqdm(redshift_indices)):
-                met_icdf_interp = met_icdf_interps[redz_idx]
+
+
+    # --- Weights for each redshift and metallicity --- #
+    def redshift_metallicity_weights(self, pop_path, pop_filters=None, N_redshift_grid=1e5):
+        """
+        Determines formation efficiencies (\gamma(z,Z)) and
+        metallicity weights (dP/dz(z,Z)) for the discrete
+        metallicities of the sim over a range of redshifts
+        """
+        # get redshift grid and create interpolant from lookback time to redshift (tlb in Myr)
+        redz_grid = np.linspace(0, self.zmax, int(N_redshift_grid))
+        tlb_grid = cosmo.lookback_time(redz_grid).to(u.Myr).value
+        tlb_to_redz_interp = interp1d(tlb_grid, redz_grid)
+        self.tlb_to_redz_interp = tlb_to_redz_interp
+        self.redz_grid = redz_grid
+
+        # read metallicity of the population models
+        pop_mets = np.sort([float(x) for x in os.listdir(pop_path) if '0.' in x])
+        pop_mets_str = sorted([x for x in os.listdir(pop_path) if '0.' in x])
+        self.pop_mets = pop_mets
+        self.pop_mets_str = pop_mets_str
+        if (pop_mets.min() < self.Zmin):
+            raise ValueError("Your low metallicity cutoff ({:0.1e}) is below your lowest metallicity run ({:0.1e})!".format(self.Zmin, pop_mets.min()))
+        if (pop_mets.max() > self.Zmax):
+            raise ValueError("Your high metallicity cutoff ({:0.1e}) is above your highest metallicity run ({:0.1e})!".format(self.Zmax, pop_mets.max()))
+
+        # get target population formation efficiency for each metallicity after applying cuts
+        formation_efficiencies = []
+        for Z in tqdm(pop_mets_str):
+            dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
+            total_mass_sampled = float(pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='mass_stars').iloc[-1])
+            bpp = pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='bpp')
+            # apply filters to bpp array, if specified
+            if pop_filters is not None:
+                for filt in pop_filters:
+                    if filt in filters._filters_dict.keys():
+                        bpp = filters._filters_dict[filt](bpp)
+                    else:
+                        raise ValueError('The filter you specified ({:s}) is not defined in the filters function!'.format(filt))
+            # now get the formation efficiency of the target population
+            N_form = len(bpp['bin_num'].unique())
+            formation_efficiencies.append(N_form / total_mass_sampled)
+        formation_efficiencies = np.asarray(formation_efficiencies)
+
+        # create empty array for storing redshift and metallicity weights
+        weight_array = np.empty((len(redz_grid), len(pop_mets)))
+
+        # cycle over redshifts and metallicities to determine sampling weights at each discrete value
+        for idx, redz in tqdm(enumerate(redz_grid), total=len(redz_grid)):
+            if self.method=='illustris':
+                # we do try/except method here since bins with no star formation have NaNs instead of CDFs
                 try:
-                    met_draws.append(met_icdf_interp(np.random.random()))
+                    # find the correct redshift bin (special treatment for most local bin)
+                    redshift_idx = 0 if redz==0 else np.argwhere(self.redshift_bins < redz)[-1][0]
+                    dt = tlb_grid[redshift_idx+1] - tlb_grid[redshift_idx]
+                    # get the relative SFR contribution at this redshift
+                    SFRD_contribution = self.sfr_pts[redshift_idx]
+                    # grab metallicity distribution at this redshift
+                    met_cdf = self.met_cdf_at_redz[redshift_idx]
+                    # evaluate metallicity grid in the CDF
+                    met_cdf_eval = met_cdf(np.log10(pop_mets))
+                    # take the midpoints between CDF evaluations and assign weights to each metallicity
+                    met_cdf_eval = met_cdf_eval[:-1] + (met_cdf_eval[1:]-met_cdf_eval[:-1])/2
+                    met_cdf_eval = np.concatenate([[0],met_cdf_eval,[1]])
+                    met_weights = met_cdf_eval[1:] - met_cdf_eval[:-1]
+                    # make sure weights are not negative (can happen from precision error)
+                    met_weights[np.argwhere(met_weights < 0)] = 0
+                    assert np.round(np.sum(met_weights), 5)==1, "Metallicity weights at redshift {:0.3e} do not add to unity!".format(redz)
                 except:
-                    print('Failed at z={:0.3f}'.format(self.redshift_draws[redz_idx]))
-                    met_draws.append(self.Zmin)     # Shouldn't happen, but just to catch it
+                    met_weights = np.zeros_like(pop_mets)
+                    SFRD_contribution = 0.0
+            else:
+                # get the relative SFR contribution
+                SFRD_contribution = sfr_z(redz)
+                # grab the metallicity distribution at this redshift
+                if self.method=='truncnorm':
+                    met_dist = metal_disp_truncnorm(redz, self.sigmaZ, self.Zmin, self.Zmax)
+                elif self.method=='corrected_truncnorm':
+                    truncated_mean_to_gaussian_mean = corrected_means_for_truncated_lognormal(self.sigmaZ, self.Zmin, self.Zmax)
+                    met_dist = metal_disp_truncnorm_corrected(redz, truncated_mean_to_gaussian_mean, self.sigmaZ, self.Zmin, self.Zmax)
+                # evaluate metallicity grid in the CDF
+                met_cdf_eval = met_dist.cdf(np.log10(pop_mets))
+                # take the midpoints between CDF evaluations and assign weights to each metallicity
+                met_cdf_eval = met_cdf_eval[:-1] + (met_cdf_eval[1:]-met_cdf_eval[:-1])/2
+                met_cdf_eval = np.concatenate([[0],met_cdf_eval,[1]])
+                met_weights = met_cdf_eval[1:] - met_cdf_eval[:-1]
+                # make sure weights are not negative (can happen from precision error)
+                met_weights[np.argwhere(met_weights < 0)] = 0
+                assert np.round(np.sum(met_weights), 5)==1, "Metallicity weights at redshift {:0.3e} do not add to unity!".format(redz)
 
-            met_draws = np.asarray(met_draws).flatten()
+            weight_array[idx] = SFRD_contribution * \
+                                    cosmo.differential_comoving_volume(redz).to(u.Mpc**3/u.sr).value * (1+redz)**(-1) * \
+                                    formation_efficiencies * met_weights
 
-        elif self.method=='truncnorm':
-            log_met_draws = []
-            for idx, redz in enumerate(tqdm(self.redshift_draws)):
-                Zdist = metal_disp_truncnorm(redz, self.sigmaZ, self.Zmin, self.Zmax)
-                log_met_draws.append(Zdist.rvs())
+        weight_array /= np.sum(weight_array)
+        self.weight_array = weight_array
 
-            met_draws = 10**np.asarray(log_met_draws)
-
-        elif self.method=='corrected_truncnorm':
-            truncated_mean_to_gaussian_mean = corrected_means_for_truncated_lognormal(self.sigmaZ, self.Zmin, self.Zmax)
-            log_met_draws = []
-            for idx, redz in enumerate(tqdm(self.redshift_draws)):
-                Zdist = metal_disp_truncnorm_corrected(redz, truncated_mean_to_gaussian_mean, self.sigmaZ, self.Zmin, self.Zmax)
-                log_met_draws.append(Zdist.rvs())
-
-            met_draws = 10**np.asarray(log_met_draws)
-
-        self.met_draws = met_draws
 
 
     # --- Resampling method --- #
-    def resample(self, pop_path, pop_filters=None, mergers_only=False, extra_info=False):
+    def resample(self, N, pop_path, pop_filters=None, mergers_only=False, extra_info=False):
         """
-        Resamples populations living at `pop_path` based on the drawn formation redshifts and metallicities
+        Resamples populations living at `pop_path`
         """
+        # randomly choose redshifts and metallicities based on the weight array
+        redz_met_grid = np.asarray(list(itertools.product(self.redz_grid, self.pop_mets)))
+        redz_met_grid_idxs = np.arange(len(redz_met_grid))
+        redz_met_draws = redz_met_grid[np.random.choice(redz_met_grid_idxs, N, p=self.weight_array.flatten())]
+        redz_draws = redz_met_draws[:,0]
+        met_draws = redz_met_draws[:,1]
 
         # create dataframe for housing the resampled data
-        df = pd.DataFrame(np.asarray([self.redshift_draws, self.met_draws]).T, columns=['z_ZAMS','Z_draw'])
+        df = pd.DataFrame(np.asarray([redz_draws, met_draws]).T, columns=['z_ZAMS','Z'])
         df['tlb_ZAMS'] = cosmo.lookback_time(np.asarray(df['z_ZAMS'])).to(u.Myr).value
-
-        pop_mets = np.sort([float(x) for x in os.listdir(pop_path) if '0.' in x])
-        pop_mets_str = sorted([x for x in os.listdir(pop_path) if '0.' in x])
-
-        # find closest metallicity run (in log-space) to the met_draw
-        met_samp = [pop_mets[np.argmin(np.abs(np.log10(pop_mets)-logZ))] for logZ in np.log10(self.met_draws)]
-        df['Z_samp'] = np.asarray(met_samp)
 
         # now, read in bpp arrays and get the DCO formation parameters (tlb_DCO, z_DCO, t_insp, tlb_merge, z_merge, m1, m2, a, porb, e)
         df['tlb_DCO'] = np.nan
@@ -306,6 +339,10 @@ class StarFormationHistory:
         df['porb'] = np.nan
         df['e'] = np.nan
         if extra_info:
+            df['M1_ZAMS'] = np.nan
+            df['M2_ZAMS'] = np.nan
+            df['porb_ZAMS'] = np.nan
+            df['e_ZAMS'] = np.nan
             df['secondary_born_first'] = False
             df['Mbh1_birth'] = np.nan
             df['Mbh1_preSMT'] = np.nan
@@ -316,19 +353,16 @@ class StarFormationHistory:
             df['Mbh2'] = np.nan
             df['SN_theta'] = np.nan
 
+        for idx, Z in tqdm(enumerate(self.pop_mets_str), total=len(self.pop_mets_str)):
+            # if no samples were drawn from this metallicity, move on
+            if len(df.loc[df['Z']==self.pop_mets[idx]])==0:
+                print("No systems were drawn for Z={:s}!".format(Z))
+                continue
 
-        # series for tracking the formation efficiency to be used later in weighting
-        df['Nsys_per_Msamp'] = np.nan
-
-        # get lookback time to redshift interpolant
-        z_grid = np.logspace(-5, 2, 100000)
-        z_grid = np.insert(z_grid, 0, 0)
-        tlb_grid = cosmo.lookback_time(z_grid).to(u.Myr).value
-        tlb_to_z_interp = interp1d(tlb_grid, z_grid)
-
-        for idx, Z in tqdm(enumerate(pop_mets_str), total=len(pop_mets_str)):
+            # read in COSMIC data
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
             bpp = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='bpp')
+            initC = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='initCond')
             mass_stars = float(np.asarray(pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='mass_stars'))[-1])
 
             # apply filters to bpp array, if specified
@@ -345,13 +379,13 @@ class StarFormationHistory:
             dco_merge = bpp.loc[((bpp['kstar_1']==13)|(bpp['kstar_1']==14)) \
                                & ((bpp['kstar_2']==13)|(bpp['kstar_2']==14))].groupby('bin_num').last()
 
-            # if there are no systems in the population model that satisfy the  criteria, just leave all their entries and NaNs
+            # if there are no systems in the population model that satisfy the criteria, just leave all their entries and NaNs
             if (len(dco_form)==0) or (len(dco_merge)==0):
                 print("No matching systems found in the population model for Z={:s}!".format(Z))
                 continue
 
             # randomly choose systems from this model
-            idxs_in_metbin = np.asarray(df.loc[df['Z_samp']==pop_mets[idx]].index)
+            idxs_in_metbin = np.asarray(df.loc[df['Z']==self.pop_mets[idx]].index)
             idxs_to_sample = np.random.choice(list(dco_form.index), size=len(idxs_in_metbin), replace=True)
             dco_form_sample = dco_form.loc[idxs_to_sample]
             dco_merge_sample = dco_merge.loc[idxs_to_sample]
@@ -360,14 +394,14 @@ class StarFormationHistory:
             df.loc[idxs_in_metbin, 'tlb_DCO'] = np.asarray(df.loc[idxs_in_metbin, 'tlb_ZAMS']) - np.asarray(dco_form_sample['tphys'])
             df_tmp = df.loc[idxs_in_metbin]   # Needed to get indices for things that merge after z=0
             idxs_in_metbin_tH = list(df_tmp.loc[df_tmp['tlb_DCO'] > 0].index)
-            df.loc[idxs_in_metbin_tH, 'z_DCO'] = tlb_to_z_interp(np.asarray(df.loc[idxs_in_metbin_tH, 'tlb_DCO']))
+            df.loc[idxs_in_metbin_tH, 'z_DCO'] = self.tlb_to_redz_interp(np.asarray(df.loc[idxs_in_metbin_tH, 'tlb_DCO']))
 
             df.loc[idxs_in_metbin, 't_delay'] = np.asarray(dco_merge_sample['tphys'])
             df.loc[idxs_in_metbin, 't_insp'] = np.asarray(dco_merge_sample['tphys']) - np.asarray(dco_form_sample['tphys'])
             df.loc[idxs_in_metbin, 'tlb_merge'] = np.asarray(df.loc[idxs_in_metbin, 'tlb_ZAMS']) - np.asarray(dco_merge_sample['tphys'])
             df_tmp = df.loc[idxs_in_metbin]   # Needed to get indices for things that merge after z=0
             idxs_in_metbin_tH = list(df_tmp.loc[df_tmp['tlb_merge'] > 0].index)
-            df.loc[idxs_in_metbin_tH, 'z_merge'] = tlb_to_z_interp(np.asarray(df.loc[idxs_in_metbin_tH, 'tlb_merge']))
+            df.loc[idxs_in_metbin_tH, 'z_merge'] = self.tlb_to_redz_interp(np.asarray(df.loc[idxs_in_metbin_tH, 'tlb_merge']))
 
             df.loc[idxs_in_metbin, 'm1'] = np.maximum(np.asarray(dco_form_sample['mass_1']), np.asarray(dco_form_sample['mass_2']))
             df.loc[idxs_in_metbin, 'm2'] = np.minimum(np.asarray(dco_form_sample['mass_1']), np.asarray(dco_form_sample['mass_2']))
@@ -378,6 +412,11 @@ class StarFormationHistory:
             # --- EXTRA INFO --- #
             # get extra info for determining spins, if specified
             if extra_info:
+                # get ZAMS properties
+                df.loc[idxs_in_metbin, 'M1_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'mass_1'])
+                df.loc[idxs_in_metbin, 'M2_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'mass_2'])
+                df.loc[idxs_in_metbin, 'porb_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'porb'])
+                df.loc[idxs_in_metbin, 'e_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'ecc'])
                 # mark small fraction of systems where the secondary is born first, just have NaNs for these for now
                 df_firstborn = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14)) | \
                         ((bpp.kstar_1<14) & (bpp.kstar_2==14))].groupby('bin_num').head(1)
@@ -421,9 +460,6 @@ class StarFormationHistory:
                 second_SN_sample = second_SN.loc[idxs_to_sample]
                 df.loc[idxs_in_metbin, 'SN_theta'] = np.asarray(second_SN_sample['delta_theta_total'])
 
-            # write total mass sampled so that these can be used for weighting later
-            df.loc[idxs_in_metbin, 'Nsys_per_Msamp'] = len(dco_form)/mass_stars
-
         # remove systems that merged after z=0, if specified
         if mergers_only==True:
             df = df.loc[df['tlb_merge'] > 0]
@@ -433,9 +469,9 @@ class StarFormationHistory:
 
         # reorder columns
         if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta','Nsys_per_Msamp']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta']]
         else:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z_draw','Z_samp','Nsys_per_Msamp']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z']]
 
         self.resampled_pop = df
 
