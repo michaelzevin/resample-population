@@ -184,9 +184,6 @@ class StarFormationHistory:
                 redshifts.append(z_at_value(cosmo.age, t*u.yr))
             redshifts = np.asarray(redshifts)
 
-            # time duration in each bin
-            dt = time_bins[1:] - time_bins[:-1]
-
             # get total SFRD at each redshift bin (units Msun / Mpc^3 / yr)
             sfr_pts = np.sum(Mform, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
 
@@ -223,18 +220,11 @@ class StarFormationHistory:
         metallicity weights (dP/dz(z,Z)) for the discrete
         metallicities of the sim over a range of redshifts
         """
-        # create interpolant from lookback time to redshift (tlb in Myr)
-        redz_grid = np.linspace(0, self.zmax, 10000)
+        # get redshift grid and create interpolant from lookback time to redshift (tlb in Myr)
+        redz_grid = np.linspace(0, self.zmax, int(N_redshift_grid))
         tlb_grid = cosmo.lookback_time(redz_grid).to(u.Myr).value
         tlb_to_redz_interp = interp1d(tlb_grid, redz_grid)
         self.tlb_to_redz_interp = tlb_to_redz_interp
-
-        # get a dense grid of redshifts
-        # NOTE: since we sample uniform in lookback time, we don't have to account for relative amount of time in each redshift bin)
-        tlb_min = cosmo.lookback_time(self.zmin)
-        tlb_max = cosmo.lookback_time(self.zmax)
-        tlb_grid = np.linspace(cosmo.lookback_time(self.zmin).to(u.Myr).value, cosmo.lookback_time(self.zmax).to(u.Myr).value, int(N_redshift_grid))
-        redz_grid = tlb_to_redz_interp(tlb_grid)
         self.redz_grid = redz_grid
 
         # read metallicity of the population models
@@ -275,6 +265,7 @@ class StarFormationHistory:
                 try:
                     # find the correct redshift bin (special treatment for most local bin)
                     redshift_idx = 0 if redz==0 else np.argwhere(self.redshift_bins < redz)[-1][0]
+                    dt = tlb_grid[redshift_idx+1] - tlb_grid[redshift_idx]
                     # get the relative SFR contribution at this redshift
                     SFRD_contribution = self.sfr_pts[redshift_idx]
                     # grab metallicity distribution at this redshift
@@ -290,6 +281,7 @@ class StarFormationHistory:
                     assert np.round(np.sum(met_weights), 5)==1, "Metallicity weights at redshift {:0.3e} do not add to unity!".format(redz)
                 except:
                     met_weights = np.zeros_like(pop_mets)
+                    SFRD_contribution = 0.0
             else:
                 # get the relative SFR contribution
                 SFRD_contribution = sfr_z(redz)

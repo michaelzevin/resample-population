@@ -60,7 +60,7 @@ if args.verbose:
     if args.filter:
         print("   applying the following filters to the population:")
         print(["{:s}".format(filt) for filt in args.filter])
-SFH.redshift_metallicity_weights(args.population, args.filter, N_redshift_grid=1e5)
+SFH.redshift_metallicity_weights(args.population, args.filter)
 
 # --- Resample population --- #
 if args.verbose:
