@@ -184,6 +184,9 @@ class StarFormationHistory:
                 redshifts.append(z_at_value(cosmo.age, t*u.yr))
             redshifts = np.asarray(redshifts)
 
+            # time duration in each bin
+            dt = time_bins[1:] - time_bins[:-1]
+
             # get total SFRD at each redshift bin (units Msun / Mpc^3 / yr)
             sfr_pts = np.sum(Mform, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
 
