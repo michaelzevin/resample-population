@@ -355,6 +355,7 @@ class StarFormationHistory:
             df['Mbh1'] = np.nan
             df['Mbh2'] = np.nan
             df['SN_theta'] = np.nan
+            df['evo_pathway'] = np.nan
 
         for idx, Z in tqdm(enumerate(self.pop_mets_str), total=len(self.pop_mets_str)):
             # if no samples were drawn from this metallicity, move on
@@ -463,6 +464,18 @@ class StarFormationHistory:
                 second_SN_sample = second_SN.loc[idxs_to_sample]
                 df.loc[idxs_in_metbin, 'SN_theta'] = np.asarray(second_SN_sample['delta_theta_total'])
 
+                # get the evolutionary pathway (CE, doubleCE, SMT)
+                evo_path_df = pd.DataFrame(index=list(bpp.index.unique()))
+                CE_idxs = list(bpp.loc[((((bpp['kstar_1']>=13) & (bpp['kstar_2']<10)) | ((bpp['kstar_2']>=13) & (bpp['kstar_1']<10))) & (bpp['evol_type']==7))].index.unique())
+                evo_path_df.loc[CE_idxs,'evo_pathway'] = 'CE'
+                SMT_idxs = list(set(bpp.index.unique()) - set(bpp.loc[bpp['evol_type']==7].index.unique()))
+                evo_path_df.loc[SMT_idxs,'evo_pathway'] = 'SMT'
+                doubleCE_idxs = bpp.loc[(bpp['kstar_1']<10) & (bpp['kstar_2']<10) & (bpp['evol_type']==7)].index.unique()
+                evo_path_df.loc[doubleCE_idxs,'evo_pathway'] = 'doubleCE'
+
+                evo_path_sample = evo_path_df.loc[idxs_to_sample]
+                df.loc[idxs_in_metbin, 'evo_pathway'] = np.asarray(evo_path_sample['evo_pathway'])
+
         # remove systems that merged after z=0, if specified
         if mergers_only==True:
             df = df.loc[df['tlb_merge'] > 0]
@@ -472,7 +485,7 @@ class StarFormationHistory:
 
         # reorder columns
         if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta','evo_pathway']]
         else:
             df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z']]
 
