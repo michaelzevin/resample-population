@@ -304,9 +304,7 @@ class StarFormationHistory:
                 met_weights[np.argwhere(met_weights < 0)] = 0
                 assert np.round(np.sum(met_weights), 5)==1, "Metallicity weights at redshift {:0.3e} do not add to unity!".format(redz)
 
-            weight_array[idx] = SFRD_contribution * \
-                                    cosmo.differential_comoving_volume(redz).to(u.Mpc**3/u.sr).value * (1+redz)**(-1) * \
-                                    formation_efficiencies * met_weights
+            weight_array[idx] = SFRD_contribution * formation_efficiencies * met_weights
 
         weight_array /= np.sum(weight_array)
         self.weight_array = weight_array
