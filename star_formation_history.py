@@ -236,9 +236,9 @@ class StarFormationHistory:
         self.pop_mets = pop_mets
         self.pop_mets_str = pop_mets_str
         if (pop_mets.min() < self.Zmin):
-            raise ValueError("Your low metallicity cutoff ({:0.1e}) is below your lowest metallicity run ({:0.1e})!".format(self.Zmin, pop_mets.min()))
+            raise ValueError("Your low metallicity cutoff ({:0.1e}) is above your lowest metallicity run ({:0.1e})!".format(self.Zmin, pop_mets.min()))
         if (pop_mets.max() > self.Zmax):
-            raise ValueError("Your high metallicity cutoff ({:0.1e}) is above your highest metallicity run ({:0.1e})!".format(self.Zmax, pop_mets.max()))
+            raise ValueError("Your high metallicity cutoff ({:0.1e}) is below your highest metallicity run ({:0.1e})!".format(self.Zmax, pop_mets.max()))
 
         # get target population formation efficiency for each metallicity after applying cuts
         formation_efficiencies = []
@@ -327,11 +327,9 @@ class StarFormationHistory:
         df = pd.DataFrame(np.asarray([redz_draws, met_draws]).T, columns=['z_ZAMS','Z'])
         df['tlb_ZAMS'] = cosmo.lookback_time(np.asarray(df['z_ZAMS'])).to(u.Myr).value
 
-        # now, read in bpp arrays and get the DCO formation parameters (tlb_DCO, z_DCO, t_insp, tlb_merge, z_merge, m1, m2, a, porb, e)
+        # now, read in bpp arrays and get the DCO formation parameters (tlb_DCO, z_DCO, tlb_merge, z_merge, m1, m2, a, porb, e)
         df['tlb_DCO'] = np.nan
         df['z_DCO'] = np.nan
-        df['t_delay'] = np.nan
-        df['t_insp'] = np.nan
         df['tlb_merge'] = np.nan
         df['z_merge'] = np.nan
         df['m1'] = np.nan
@@ -381,6 +379,9 @@ class StarFormationHistory:
             dco_merge = bpp.loc[((bpp['kstar_1']==13)|(bpp['kstar_1']==14)) \
                                & ((bpp['kstar_2']==13)|(bpp['kstar_2']==14))].groupby('bin_num').last()
 
+            # set the tphys of things that don't merge in a Hubble time to NaN so that tlb_merge will be NaN
+            dco_merge.loc[dco_merge['evol_type']==10, 'tphys'] = np.nan
+
             # if there are no systems in the population model that satisfy the criteria, just leave all their entries and NaNs
             if (len(dco_form)==0) or (len(dco_merge)==0):
                 print("No matching systems found in the population model for Z={:s}!".format(Z))
@@ -398,8 +399,6 @@ class StarFormationHistory:
             idxs_in_metbin_tH = list(df_tmp.loc[df_tmp['tlb_DCO'] > 0].index)
             df.loc[idxs_in_metbin_tH, 'z_DCO'] = self.tlb_to_redz_interp(np.asarray(df.loc[idxs_in_metbin_tH, 'tlb_DCO']))
 
-            df.loc[idxs_in_metbin, 't_delay'] = np.asarray(dco_merge_sample['tphys'])
-            df.loc[idxs_in_metbin, 't_insp'] = np.asarray(dco_merge_sample['tphys']) - np.asarray(dco_form_sample['tphys'])
             df.loc[idxs_in_metbin, 'tlb_merge'] = np.asarray(df.loc[idxs_in_metbin, 'tlb_ZAMS']) - np.asarray(dco_merge_sample['tphys'])
             df_tmp = df.loc[idxs_in_metbin]   # Needed to get indices for things that merge after z=0
             idxs_in_metbin_tH = list(df_tmp.loc[df_tmp['tlb_merge'] > 0].index)
