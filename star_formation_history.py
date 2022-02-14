@@ -419,7 +419,7 @@ class StarFormationHistory:
                 df.loc[idxs_in_metbin, 'M2_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'mass_2'])
                 df.loc[idxs_in_metbin, 'porb_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'porb'])
                 df.loc[idxs_in_metbin, 'e_ZAMS'] = np.asarray(initC.loc[idxs_to_sample, 'ecc'])
-                # mark small fraction of systems where the secondary is born first, just have NaNs for these for now
+                # mark small fraction of systems where the secondary is born first
                 df_firstborn = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14)) | \
                         ((bpp.kstar_1<14) & (bpp.kstar_2==14))].groupby('bin_num').head(1)
                 df_firstborn_sample = df_firstborn.loc[idxs_to_sample]
@@ -430,8 +430,6 @@ class StarFormationHistory:
                 df.loc[idxs_in_metbin[secondary_born_first], 'Mbh1_birth'] = np.asarray(df_firstborn_sample[secondary_born_first]['mass_2'])
 
                 # first-born BH mass before and after RLO (if SMT happens at all)
-                # NOTE: rlo_end will have a few more systems, since there are some where the primary collapses
-                # to a BH during RLO of its companion giant, and some other edge cases. Ignore these for now.
                 rlo_start = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14) & (bpp.evol_type==3))].groupby('bin_num').head(1)
                 rlo_end = bpp.loc[((bpp.kstar_1==14) & (bpp.evol_type==4))].groupby('bin_num').tail(1)
                 # get sampling indices that went through RLO, rest will just be NaNs for now
@@ -448,8 +446,8 @@ class StarFormationHistory:
                                     ((bpp.kstar_1<14) & (bpp.kstar_2==14))].groupby('bin_num').tail(1)
                 prior_to_BBH_sample = prior_to_BBH.loc[idxs_to_sample]
                 df.loc[idxs_in_metbin, 'porb_HeBH'] = np.asarray(prior_to_BBH_sample['porb'])
-                df.loc[idxs_in_metbin[~secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[~secondary_born_first]['mass_1'])
-                df.loc[idxs_in_metbin[secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[secondary_born_first]['mass_2'])
+                df.loc[idxs_in_metbin[~secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[~secondary_born_first]['mass_2'])
+                df.loc[idxs_in_metbin[secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[secondary_born_first]['mass_1'])
 
                 # BH masses (based on which was born first)
                 df.loc[idxs_in_metbin, 'Mbh1'] = np.asarray(dco_form_sample['mass_1'])
