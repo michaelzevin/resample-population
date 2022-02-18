@@ -347,6 +347,8 @@ class StarFormationHistory:
             df['Mbh1_birth'] = np.nan
             df['Mbh1_preSMT'] = np.nan
             df['Mbh1_postSMT'] = np.nan
+            df['Mstar_preSMT'] = np.nan
+            df['Mstar_postSMT'] = np.nan
             df['porb_HeBH'] = np.nan
             df['Mhe_HeBH'] = np.nan
             df['Mbh1'] = np.nan
@@ -440,6 +442,8 @@ class StarFormationHistory:
                 rlo_end_sample = rlo_end.loc[idxs_to_sample[idxs_with_RLO]]
                 df.loc[idxs_in_metbin[idxs_with_RLO], 'Mbh1_preSMT'] = np.asarray(rlo_start_sample['mass_1'])
                 df.loc[idxs_in_metbin[idxs_with_RLO], 'Mbh1_postSMT'] = np.asarray(rlo_end_sample['mass_1'])
+                df.loc[idxs_in_metbin[idxs_with_RLO], 'Mstar_preSMT'] = np.asarray(rlo_start_sample['mass_2'])
+                df.loc[idxs_in_metbin[idxs_with_RLO], 'Mstar_postSMT'] = np.asarray(rlo_end_sample['mass_2'])
 
                 # get the timestep prior to BBH formation, save He-star mass (FIXME: use last step before BBH or kstar=7?)
                 prior_to_BBH = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14)) | \
@@ -481,7 +485,7 @@ class StarFormationHistory:
 
         # reorder columns
         if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mhe_HeBH','porb_HeBH','SN_theta','evo_pathway']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preSMT','Mbh1_postSMT','Mstar_preSMT','Mstar_postSMT','Mhe_HeBH','porb_HeBH','SN_theta','evo_pathway']]
         else:
             df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z']]
 
