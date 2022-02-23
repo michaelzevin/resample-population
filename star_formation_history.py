@@ -351,7 +351,11 @@ class StarFormationHistory:
             df['Mstar_postMT'] = np.nan
             df['delta_t_MT'] = np.nan
             df['porb_HeBH'] = np.nan
+            df['Mbh_HeBH'] = np.nan
             df['Mhe_HeBH'] = np.nan
+            df['porb_HeHe'] = np.nan
+            df['Mhe1_HeHe'] = np.nan
+            df['Mhe2_HeHe'] = np.nan
             df['Mbh1'] = np.nan
             df['Mbh2'] = np.nan
             df['SN_theta'] = np.nan
@@ -437,7 +441,7 @@ class StarFormationHistory:
                 rlo_end = bpp.loc[((bpp.kstar_1==14) & (bpp.evol_type==4))].groupby('bin_num').tail(1)
                 # get sampling indices that went through RLO, rest will just be NaNs for now
                 idxs_with_RLO = pd.Series(idxs_to_sample).isin(rlo_start.index.unique())
-                #idxs_with_RLO = pd.Series(idxs_with_RLO).isin(rlo_end.index.unique())
+                #idxs_with_RLO = pd.Series(idxs_with_RLO).isin(rlo_end.index.unique())   # redundant
                 # now we should be good, since the mass is the same before/after RLO
                 rlo_start_sample = rlo_start.loc[idxs_to_sample[idxs_with_RLO]]
                 rlo_end_sample = rlo_end.loc[idxs_to_sample[idxs_with_RLO]]
@@ -447,17 +451,53 @@ class StarFormationHistory:
                 df.loc[idxs_in_metbin[idxs_with_RLO], 'Mstar_postMT'] = np.asarray(rlo_end_sample['mass_2'])
                 df.loc[idxs_in_metbin[idxs_with_RLO], 'delta_t_MT'] = np.asarray(rlo_end_sample['tphys'] - rlo_start_sample['tphys'])
 
-                # get the timestep prior to BBH formation, save He-star mass (FIXME: use last step before BBH or kstar=7?)
-                prior_to_BBH = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2<14)) | \
-                                    ((bpp.kstar_1<14) & (bpp.kstar_2==14))].groupby('bin_num').tail(1)
-                prior_to_BBH_sample = prior_to_BBH.loc[idxs_to_sample]
-                df.loc[idxs_in_metbin, 'porb_HeBH'] = np.asarray(prior_to_BBH_sample['porb'])
-                df.loc[idxs_in_metbin[~secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[~secondary_born_first]['mass_2'])
-                df.loc[idxs_in_metbin[secondary_born_first], 'Mhe_HeBH'] = np.asarray(prior_to_BBH_sample[secondary_born_first]['mass_1'])
+                # get the last timestep of BH+HeMS for standard tidal spinup
+                HeBH = bpp.loc[((bpp.kstar_1==14) & (bpp.kstar_2==7)) | \
+                                    ((bpp.kstar_1==7) & (bpp.kstar_2==14))].groupby('bin_num').tail(1)
+                porb, Mbh, Mhe = [], [], []
+                for samp_idx,secondary_first in zip(idxs_to_sample,secondary_born_first):
+                    if samp_idx in HeBH.index.unique():
+                        porb.append(HeBH.loc[samp_idx, 'porb'])
+                        if secondary_first==True:
+                            Mbh.append(HeBH.loc[samp_idx, 'mass_2'])
+                            Mhe.append(HeBH.loc[samp_idx, 'mass_1'])
+                        else:
+                            Mbh.append(HeBH.loc[samp_idx, 'mass_1'])
+                            Mhe.append(HeBH.loc[samp_idx, 'mass_2'])
+                    else:
+                        porb.append(np.nan)
+                        Mbh.append(np.nan)
+                        Mhe.append(np.nan)
+                df.loc[idxs_in_metbin, 'porb_HeBH'] = np.asarray(porb)
+                df.loc[idxs_in_metbin, 'Mbh_HeBH'] = np.asarray(Mbh)
+                df.loc[idxs_in_metbin, 'Mhe_HeBH'] = np.asarray(Mhe)
+
+                # get the timestep when both stars are He stars for potential spinup of first-born in the doubleCE channel
+                HeHe = bpp.loc[((bpp.kstar_1==7) & (bpp.kstar_2==7)) | \
+                                    ((bpp.kstar_1==7) & (bpp.kstar_2==7))].groupby('bin_num').tail(1)
+                porb, Mhe1, Mhe2 = [], [], []
+                for samp_idx,secondary_first in zip(idxs_to_sample,secondary_born_first):
+                    if samp_idx in HeHe.index.unique():
+                        porb.append(HeHe.loc[samp_idx, 'porb'])
+                        if secondary_first==True:
+                            Mhe1.append(HeHe.loc[samp_idx, 'mass_2'])
+                            Mhe2.append(HeHe.loc[samp_idx, 'mass_1'])
+                        else:
+                            Mhe1.append(HeHe.loc[samp_idx, 'mass_1'])
+                            Mhe2.append(HeHe.loc[samp_idx, 'mass_2'])
+                    else:
+                        porb.append(np.nan)
+                        Mhe1.append(np.nan)
+                        Mhe2.append(np.nan)
+                df.loc[idxs_in_metbin, 'porb_HeHe'] = np.asarray(porb)
+                df.loc[idxs_in_metbin, 'Mhe1_HeHe'] = np.asarray(Mhe1)
+                df.loc[idxs_in_metbin, 'Mhe2_HeHe'] = np.asarray(Mhe2)
 
                 # BH masses (based on which was born first)
-                df.loc[idxs_in_metbin, 'Mbh1'] = np.asarray(dco_form_sample['mass_1'])
-                df.loc[idxs_in_metbin, 'Mbh2'] = np.asarray(dco_form_sample['mass_2'])
+                df.loc[idxs_in_metbin[~secondary_born_first], 'Mbh1'] = np.asarray(dco_form_sample[~secondary_born_first]['mass_1'])
+                df.loc[idxs_in_metbin[secondary_born_first], 'Mbh1'] = np.asarray(dco_form_sample[secondary_born_first]['mass_2'])
+                df.loc[idxs_in_metbin[~secondary_born_first], 'Mbh2'] = np.asarray(dco_form_sample[~secondary_born_first]['mass_2'])
+                df.loc[idxs_in_metbin[secondary_born_first], 'Mbh2'] = np.asarray(dco_form_sample[secondary_born_first]['mass_1'])
 
                 # get the spin tilts
                 kick_info = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='kick_info')
@@ -487,7 +527,7 @@ class StarFormationHistory:
 
         # reorder columns
         if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preMT','Mbh1_postMT','Mstar_preMT','Mstar_postMT','delta_t_MT','Mhe_HeBH','porb_HeBH','SN_theta','evo_pathway']]
+            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preMT','Mbh1_postMT','Mstar_preMT','Mstar_postMT','delta_t_MT','Mbh_HeBH','Mhe_HeBH','porb_HeBH','Mhe1_HeHe','Mhe2_HeHe','porb_HeHe','SN_theta','evo_pathway']]
         else:
             df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z']]
 
