@@ -29,7 +29,14 @@ def bns_filter(bpp):
     bpp_cut = bpp.loc[bns_idxs]
     return bpp_cut
 
+def HMXB_filter(bpp):
+    FirstCOForm = bpp.loc[(bpp['kstar_1']==13) | (bpp['kstar_1']==14)].groupby('bin_num').first()
+    HMXBs = FirstCOForm.loc[(FirstCOForm['mass_2'] >= 5) & (FirstCOForm['sep'] > 0)]
+    bpp_cut = bpp.loc[HMXBs.index]
+    return bpp_cut
+
 _filters_dict = {'pessimistic_CE': pessimistic_CE, \
                   'bbh': bbh_filter, \
                   'nsbh': nsbh_filter, \
-                  'bns': bns_filter}
+                  'bns': bns_filter, \
+                  'HMXB': HMXB_filter}
