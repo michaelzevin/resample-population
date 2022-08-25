@@ -105,7 +105,7 @@ class StarFormationHistory:
     """
     Class for determining birth redshifts and metallicities for a population of mergers
     """
-    def __init__(self, method, sigmaZ, zmin, zmax, Zmin, Zmax, cosmo_path=None):
+    def __init__(self, method, sigmaZ, zmin, zmax, Zmin, Zmax, cosmo_path=None, verbose=False):
         # Instantiates the SFH class that will be used to draw redshifts and metallicities
         self.method = method
         self.zmin = zmin
@@ -132,6 +132,8 @@ class StarFormationHistory:
 
             # get redshift bins based on the cut time bins above
             redshift_bins = []
+            if verbose:
+                print("    determining bin edges in redshift space")
             for t in tqdm(time_bins[:-1]):
                 redshift_bins.append(z_at_value(cosmo.age, t*u.yr))
             redshift_bins.append(0)   # special treatment for most local bin
@@ -180,6 +182,8 @@ class StarFormationHistory:
 
             # calculate redshifts for the log-spaced centers (for interpolation)
             redshifts = []
+            if verbose:
+                print("    determining bin centers in redshift space")
             for t in tqdm(times):
                 redshifts.append(z_at_value(cosmo.age, t*u.yr))
             redshifts = np.asarray(redshifts)
@@ -217,7 +221,7 @@ class StarFormationHistory:
 
 
     # --- Weights for each redshift and metallicity --- #
-    def redshift_metallicity_weights(self, pop_path, pop_filters=None, N_redshift_grid=1e5):
+    def redshift_metallicity_weights(self, pop_path, pop_filters=None, N_redshift_grid=1e5, verbose=False):
         """
         Determines formation efficiencies (\gamma(z,Z)) and
         metallicity weights (dP/dz(z,Z)) for the discrete
@@ -240,8 +244,10 @@ class StarFormationHistory:
         if (pop_mets.max() > self.Zmax):
             raise ValueError("Your high metallicity cutoff ({:0.1e}) is below your highest metallicity run ({:0.1e})!".format(self.Zmax, pop_mets.max()))
 
-        # get target population formation efficiency for each metallicity after applying cuts
+        # get target population formation efficiency for each metallicity after applying filters
         formation_efficiencies = []
+        if verbose:
+            print("    determining formation efficiencies after applying filters")
         for Z in tqdm(pop_mets_str):
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
             total_mass_sampled = float(pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='mass_stars').iloc[-1])
@@ -262,6 +268,8 @@ class StarFormationHistory:
         weight_array = np.empty((len(redz_grid), len(pop_mets)))
 
         # cycle over redshifts and metallicities to determine sampling weights at each discrete value
+        if verbose:
+            print("    determine relative weights at each redshift/metallicity bin")
         for idx, redz in tqdm(enumerate(redz_grid), total=len(redz_grid)):
             if self.method=='illustris':
                 # we do try/except method here since bins with no star formation have NaNs instead of CDFs
@@ -313,7 +321,7 @@ class StarFormationHistory:
 
 
     # --- Resampling method --- #
-    def resample(self, N, pop_path, pop_filters=None, mergers_only=False, extra_info=False):
+    def resample(self, N, pop_path, pop_filters=None, mergers_only=False, initC_only=False, extra_info=False, verbose=False):
         """
         Resamples populations living at `pop_path`
         """
@@ -328,39 +336,22 @@ class StarFormationHistory:
         df = pd.DataFrame(np.asarray([redz_draws, met_draws]).T, columns=['z_ZAMS','Z'])
         df['tlb_ZAMS'] = cosmo.lookback_time(np.asarray(df['z_ZAMS'])).to(u.Myr).value
 
-        # now, read in bpp arrays and get the DCO formation parameters (tlb_DCO, z_DCO, tlb_merge, z_merge, m1, m2, a, porb, e)
-        df['tlb_DCO'] = np.nan
-        df['z_DCO'] = np.nan
-        df['tlb_merge'] = np.nan
-        df['z_merge'] = np.nan
-        df['m1'] = np.nan
-        df['m2'] = np.nan
-        df['a'] = np.nan
-        df['porb'] = np.nan
-        df['e'] = np.nan
-        if extra_info:
-            df['M1_ZAMS'] = np.nan
-            df['M2_ZAMS'] = np.nan
-            df['porb_ZAMS'] = np.nan
-            df['e_ZAMS'] = np.nan
-            df['secondary_born_first'] = False
-            df['Mbh1_birth'] = np.nan
-            df['Mbh1_preMT'] = np.nan
-            df['Mbh1_postMT'] = np.nan
-            df['Mstar_preMT'] = np.nan
-            df['Mstar_postMT'] = np.nan
-            df['delta_t_MT'] = np.nan
-            df['porb_HeBH'] = np.nan
-            df['Mbh_HeBH'] = np.nan
-            df['Mhe_HeBH'] = np.nan
-            df['porb_HeHe'] = np.nan
-            df['Mhe1_HeHe'] = np.nan
-            df['Mhe2_HeHe'] = np.nan
-            df['Mbh1'] = np.nan
-            df['Mbh2'] = np.nan
-            df['SN_theta'] = np.nan
-            df['evo_pathway'] = np.nan
+        if initC_only==False:
+            # create empty columns for all the parameters we wish to save in the resampled population
+            default_params = ['tlb_DCO','z_DCO','tlb_merge','z_merge','m1','m2','a','porb','e']
+            extra_params = ['M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','secondary_born_first',\
+                    'secondary_born_first','Mbh1_birth','Mbh1_preMT','Mbh1_postMT','Mstar_preMT',\
+                    'Mstar_postMT','delta_t_MT','porb_HeBH','Mbh_HeBH','Mhe_HeBH','porb_HeHe',\
+                    'Mhe1_HeHe','Mhe2_HeHe','Mbh1','Mbh2','SN_theta','evo_pathway']
+            df_tmp = pd.DataFrame(np.nan*np.ones((len(df),len(default_params))), columns=default_params)
+            df = pd.concat([df, df_tmp], axis=1)
+            if extra_info==True:
+                df_tmp = pd.DataFrame(np.nan*np.ones((len(df),len(extra_params))), columns=extra_params)
+                df = pd.concat([df, df_tmp], axis=1)
 
+
+        if verbose:
+            print("    selecting binaries from each discrete metallicity in population model")
         for idx, Z in tqdm(enumerate(self.pop_mets_str), total=len(self.pop_mets_str)):
             # if no samples were drawn from this metallicity, move on
             if len(df.loc[df['Z']==self.pop_mets[idx]])==0:
@@ -372,6 +363,10 @@ class StarFormationHistory:
             bpp = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='bpp')
             initC = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='initCond')
             mass_stars = float(np.asarray(pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='mass_stars'))[-1])
+            if (initC_only==True) and idx==0:
+                # create empty columns for each initC line in the dataframe (only do this once)
+                df_tmp = pd.DataFrame(np.nan*np.ones((len(df),len(initC.keys()))), columns=list(initC.keys()))
+                df = pd.concat([df, df_tmp], axis=1)
 
             # apply filters to bpp array, if specified
             if pop_filters is not None:
@@ -380,6 +375,16 @@ class StarFormationHistory:
                         bpp = filters._filters_dict[filt](bpp)
                     else:
                         raise ValueError('The filter you specified ({:s}) is not defined in the filters function!'.format(filt))
+
+            # if we only wish to save the initial conditions of the resampled population, do this here and skip everything else in the loop
+            if initC_only==True:
+                # randomly choose systems from this model
+                idxs_in_metbin = np.asarray(df.loc[df['Z']==self.pop_mets[idx]].index)
+                idxs_to_sample = np.random.choice(list(initC.index), size=len(idxs_in_metbin), replace=True)
+                initC_sample = initC.loc[idxs_to_sample]
+                for key in initC.keys():
+                    df.loc[idxs_in_metbin, key] = np.asarray(initC_sample[key])
+                continue
 
             # get point of DCO formation
             dco_form = bpp.loc[((bpp['kstar_1']==13)|(bpp['kstar_1']==14)) \
@@ -526,10 +531,11 @@ class StarFormationHistory:
             assert(all(df.isna().any())==False)
 
         # reorder columns
-        if extra_info:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preMT','Mbh1_postMT','Mstar_preMT','Mstar_postMT','delta_t_MT','Mbh_HeBH','Mhe_HeBH','porb_HeBH','Mhe1_HeHe','Mhe2_HeHe','porb_HeHe','SN_theta','evo_pathway']]
-        else:
-            df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z']]
+        if initC_only==False:
+            if extra_info:
+                df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z','M1_ZAMS','M2_ZAMS','porb_ZAMS','e_ZAMS','Mbh1','Mbh2','secondary_born_first','Mbh1_birth','Mbh1_preMT','Mbh1_postMT','Mstar_preMT','Mstar_postMT','delta_t_MT','Mbh_HeBH','Mhe_HeBH','porb_HeBH','Mhe1_HeHe','Mhe2_HeHe','porb_HeHe','SN_theta','evo_pathway']]
+            else:
+                df = df[['z_ZAMS','z_DCO','z_merge','tlb_ZAMS','tlb_DCO','tlb_merge','m1','m2','a','porb','e','Z']]
 
         self.resampled_pop = df
 
