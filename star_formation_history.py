@@ -363,7 +363,7 @@ class StarFormationHistory:
             bpp = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='bpp')
             initC = pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='initCond')
             mass_stars = float(np.asarray(pd.read_hdf(os.path.join(pop_path, Z, dat_file), key='mass_stars'))[-1])
-            if (initC_only==True) and idx==0:
+            if initC_only==True and idx==0:
                 # create empty columns for each initC line in the dataframe (only do this once)
                 df_tmp = pd.DataFrame(np.nan*np.ones((len(df),len(initC.keys()))), columns=list(initC.keys()))
                 df = pd.concat([df, df_tmp], axis=1)
