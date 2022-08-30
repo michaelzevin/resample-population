@@ -39,4 +39,4 @@ _filters_dict = {'pessimistic_CE': pessimistic_CE, \
                   'bbh': bbh_filter, \
                   'nsbh': nsbh_filter, \
                   'bns': bns_filter, \
-                  'HMXB': HMXB_filter}
+                  'hmxb': HMXB_filter}
