@@ -252,11 +252,12 @@ class StarFormationHistory:
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
             total_mass_sampled = float(pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='mass_stars').iloc[-1])
             bpp = pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='bpp')
+            initC = pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='initCond')
             # apply filters to bpp array, if specified
             if pop_filters is not None:
                 for filt in pop_filters:
                     if filt in filters._filters_dict.keys():
-                        bpp = filters._filters_dict[filt](bpp)
+                        bpp,initC = filters._filters_dict[filt](bpp,initC)
                     else:
                         raise ValueError('The filter you specified ({:s}) is not defined in the filters function!'.format(filt))
             # now get the formation efficiency of the target population
@@ -372,7 +373,7 @@ class StarFormationHistory:
             if pop_filters is not None:
                 for filt in pop_filters:
                     if filt in filters._filters_dict.keys():
-                        bpp = filters._filters_dict[filt](bpp)
+                        bpp,initC = filters._filters_dict[filt](bpp,initC)
                     else:
                         raise ValueError('The filter you specified ({:s}) is not defined in the filters function!'.format(filt))
 
