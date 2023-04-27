@@ -20,15 +20,18 @@ from star_formation_history import StarFormationHistory
 # --- Argument handling --- #
 argp = argparse.ArgumentParser()
 argp.add_argument("--Nresamp", type=int, required=True, help="Number of systems to resample from the populations.")
-argp.add_argument("--population", type=str, required=True, help="Path to hdf5 file that contains the population model. Keys for h5 file should be the metallicities, with attribute of dataset 'mass_sampled'. Dataset MUST include: 'm1_zams', 'm2_zams', ")
+argp.add_argument("--population", type=str, required=True, help="Base directory to the COSMIC population you wish to resample. Will expect a directory with individual runs inside subdirectories labelled by their metallicity.")
 argp.add_argument("--method", type=str, default="truncnorm", help="Sets the method for calculating the metallicity dispersion. 'truncnorm' will use the standard truncated normal at the mean metallicity Z(z). 'corrected_truncnorm' will adjust the mean provided when defining the probability density such that it reproduces the correct mean metallicity Z(z) when the truncated normal probability density is constructed. 'illustris' will use the SFR(Z,z) from the Illustris-TNG simulation, and will supersede whatever is given in the 'sigmaZ' argument.  Default='truncnorm'.")
 argp.add_argument("--cosmo-path", type=str, help="File path for the binned stellar mass formed at each redshift/metallicity. Required if using method 'illustris'. Default=None.")
+argp.add_argument("--filter", nargs="+", help="Filter specified in utils/filters.py that downselect the bpp array. Default is None.")
 argp.add_argument("--zmin", type=float, default=0.0001, help="Sets the lower bound of the metallicity in absolute units. Default=0.0001.")
 argp.add_argument("--zmax", type=float, default=20, help="Sets the upper bound of the metallicity in absolute units. Default=20.")
 argp.add_argument("--Zmin", type=float, default=1e-7, help="Sets the lower bound of the metallicity in absolute units. Default=1e-7.")
 argp.add_argument("--Zmax", type=float, default=1, help="Sets the upper bound of the metallicity in absolute units. Default=1.")
 argp.add_argument("--sigmaZ", type=float, help="Sets the metallicity dispersion for the mean metallicity relation Z(z). ")
-argp.add_argument("--mergers-only", action="store_true", help="If True, will only keep systems from the resampled population that merge before z=0. Default is False.")
+argp.add_argument("--mergers-only", action="store_true", help="If True, will only keep systems from the resampled population that merger within a Hubble time. Default is False.")
+argp.add_argument("--initC-only", action="store_true", help="If True, will store binary initial conditions rather than specific info for the compact binary. Default is False.")
+argp.add_argument("--extra-info", action="store_true", help="If True, will also store pertinent extra info defined in the 'resample' method. Default is False.")
 argp.add_argument("--output-path", type=str, help="Location where to write resampled population to disk. Info is stored as attributes to the hdf5 file, with the resampled population in the dataset as key 'binaries'. If unspecified, will not save it.")
 argp.add_argument("-V", "--verbose", action='store_true', help="Adds verbosity.")
 args = argp.parse_args()
@@ -47,6 +50,10 @@ if args.method=='illustris' and args.sigmaZ is not None:
 if args.method=='corrected_truncnorm':
     warnings.warn("The corrected_truncnorm method takes a very long time for large redshift grids, consider lowering N_redshift_grid.")
 
+# Spit out warning if you set extra-info as well as initC-only
+if args.initC_only==True and args.extra_info==True:
+    warnings.warn("You said that you wanted extra info about the binaries, but specified initC-only, so only the initC for resampled binaries will be stored.")
+
 # --- Instantiate SFH class --- #
 if args.verbose:
     print("\nInstantiating StarFormationHistory class using {:s} method...\n".format(args.method))
@@ -55,12 +62,15 @@ SFH = StarFormationHistory(args.method, args.sigmaZ, args.zmin, args.zmax, args.
 # --- Get relative weights for our metallicities across a dense array of redshifts --- #
 if args.verbose:
     print("\nCalculating relative weights at each redshift and metallicity...\n")
-SFH.redshift_metallicity_weights(args.population, verbose=args.verbose)
+    if args.filter:
+        print("   applying the following filters to the population:")
+        print(["{:s}".format(filt) for filt in args.filter])
+SFH.redshift_metallicity_weights_cosmic(args.population, args.filter, verbose=args.verbose)
 
 # --- Resample population --- #
 if args.verbose:
     print("\nResampling population models at {:s}...".format(args.population))
-SFH.resample(args.Nresamp, args.population, mergers_only=args.mergers_only, verbose=args.verbose)
+SFH.resample_cosmic(args.Nresamp, args.population, pop_filters=args.filter, mergers_only=args.mergers_only, initC_only=args.initC_only, extra_info=args.extra_info, verbose=args.verbose)
 
 # --- Save to disk --- #
 if args.output_path:
