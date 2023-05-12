@@ -2,11 +2,11 @@
 
 poppath='/Users/michaelzevin/research/posydon/population_models/test_1M.hdf5'
 cosmopath='/Users/michaelzevin/research/git/resample-population/data/TNG100_L75n1820TNG__x-t-log_y-Z-log.hdf5'
-outputpath='/Users/michaelzevin/research/posydon/population_models/test_1M_resampled_illustris.hdf5'
+outputpath='/Users/michaelzevin/research/posydon/population_models/test_1M_resampled_illustris_allmergers.hdf5'
 method=illustris
 
 python ../resample \
---Nresamp 100000 \
+--Nresamp 1000000 \
 --population ${poppath} \
 --method ${method} \
 --cosmo-path ${cosmopath} \
@@ -14,6 +14,6 @@ python ../resample \
 --zmin 0.001 \
 --zmax 20 \
 --sigmaZ 0.5 \
---mergers-only \
 --verbose \
+#--mergers-only \
 
