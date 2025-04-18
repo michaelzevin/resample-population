@@ -168,6 +168,7 @@ class StarFormationHistory:
                 bins_below_Zmin = np.squeeze(met_bins[:metal_enough_idx])
                 Mform_below_Zmin = np.squeeze(Mform[:, :(metal_enough_idx-1)])
                 sfr_pts_below_Zmin = np.sum(Mform_below_Zmin, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
+                self.sfr_below_Zmin = sfr_pts_below_Zmin
                 # now that we have this saved, truncate metallicity bins
                 met_bins = np.squeeze(met_bins[metal_enough_idx:])
                 # add lowest metallicity to beginning of met bins
@@ -180,6 +181,7 @@ class StarFormationHistory:
                 bins_above_Zmax = np.squeeze(met_bins[too_metal_idx:])
                 Mform_above_Zmax = np.squeeze(Mform[:, too_metal_idx:])
                 sfr_pts_above_Zmax = np.sum(Mform_above_Zmax, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
+                self.sfr_above_Zmax = sfr_pts_above_Zmax
                 # now that we have this saved, truncate metallicity bins
                 met_bins = np.squeeze(met_bins[:too_metal_idx])
                 # add highest metallicity to end of array
@@ -227,10 +229,6 @@ class StarFormationHistory:
             self.time_bins = time_bins[::-1]
             self.met_bins = met_bins
             self.redshift_bins = redshift_bins[::-1]
-            # store SFR below Zmin and above Zmax for normalization purposes
-            self.sfr_below_Zmin = sfr_pts_below_Zmin[::-1]
-            self.sfr_above_Zmax = sfr_pts_above_Zmax[::-1]
-
 
 
     # --- Weights for each redshift and metallicity --- #
@@ -762,5 +760,14 @@ class StarFormationHistory:
 
             # update the weights for these systems in the full dataframe
             df.update(df_cut)
+
+        # rescale by SF from metallicities that were excluded
+        rescale_amount = 0
+        if 'sfr_below_Zmin' in self.__dict__.keys():
+            rescale_amount += np.sum(self.sfr_below_Zmin)
+        if 'sfr_above_Zmin' in self.__dict__.keys():
+            rescale_amount += np.sum(self.sfr_above_Zmax)
+        rescale_fac = (np.sum(self.sfr_pts) + rescale_amount) / np.sum(self.sfr_pts)
+        df['weight'] = df['weight'] * rescale_fac
 
         self.resampled_pop = df
