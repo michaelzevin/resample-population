@@ -157,10 +157,18 @@ class StarFormationHistory:
                 time_bins = np.insert(time_bins, 0, cosmo.age(zmax).to(u.yr).value)
                 Mform = np.squeeze(Mform[(too_young_idx):, :])
 
+            # calculate dt for each time bin
+            dt = time_bins[1:] - time_bins[:-1]
+
             # slice arrays based on Zmin and Zmax, if specified
             if (Zmin is not None) and (Zmin > met_bins.min()):
                 # we only care about stuff above some threshold metallicity
                 metal_enough_idx = np.argwhere(met_bins >= Zmin)[0][0]
+                # first, save sfr below Zmin
+                bins_below_Zmin = np.squeeze(met_bins[:metal_enough_idx])
+                Mform_below_Zmin = np.squeeze(Mform[:, :(metal_enough_idx-1)])
+                sfr_pts_below_Zmin = np.sum(Mform_below_Zmin, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
+                # now that we have this saved, truncate metallicity bins
                 met_bins = np.squeeze(met_bins[metal_enough_idx:])
                 # add lowest metallicity to beginning of met bins
                 met_bins = np.insert(met_bins, 0, Zmin)
@@ -168,6 +176,11 @@ class StarFormationHistory:
             if (Zmax is not None) and (Zmax < met_bins.max()):
                 # and remove things that have metallicities above ~2Zsun
                 too_metal_idx = np.argwhere(met_bins > Zmax)[0][0]
+                # first, save sfr below Zmin
+                bins_above_Zmax = np.squeeze(met_bins[too_metal_idx:])
+                Mform_above_Zmax = np.squeeze(Mform[:, too_metal_idx:])
+                sfr_pts_above_Zmax = np.sum(Mform_above_Zmax, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
+                # now that we have this saved, truncate metallicity bins
                 met_bins = np.squeeze(met_bins[:too_metal_idx])
                 # add highest metallicity to end of array
                 met_bins = np.append(met_bins, Zmax)
@@ -187,9 +200,6 @@ class StarFormationHistory:
             for t in tqdm(times):
                 redshifts.append(z_at_value(cosmo.age, t*u.yr))
             redshifts = np.asarray(redshifts)
-
-            # time duration in each bin
-            dt = time_bins[1:] - time_bins[:-1]
 
             # get total SFRD at each redshift bin (units Msun / Mpc^3 / yr)
             sfr_pts = np.sum(Mform, axis=1) / dt / 100**3   # simulation from 100 Mpc^3 bin
@@ -217,6 +227,9 @@ class StarFormationHistory:
             self.time_bins = time_bins[::-1]
             self.met_bins = met_bins
             self.redshift_bins = redshift_bins[::-1]
+            # store SFR below Zmin and above Zmax for normalization purposes
+            self.sfr_below_Zmin = sfr_pts_below_Zmin[::-1]
+            self.sfr_above_Zmax = sfr_pts_above_Zmax[::-1]
 
 
 
@@ -233,6 +246,7 @@ class StarFormationHistory:
         tlb_to_redz_interp = interp1d(tlb_grid, redz_grid)
         self.tlb_to_redz_interp = tlb_to_redz_interp
         self.redz_grid = redz_grid
+        # set spacing in equal lookback times (e.g., 10 Myr)...do we need to account for time dilation? relative volume?
 
         # read metallicity of the population models
         hfile = h5py.File(pop_path, 'r')
@@ -389,10 +403,14 @@ class StarFormationHistory:
         metallicities of the sim over a range of redshifts
         """
         # get redshift grid and create interpolant from lookback time to redshift (tlb in Myr)
-        redz_grid = np.linspace(0, self.zmax, int(N_redshift_grid))
-        tlb_grid = cosmo.lookback_time(redz_grid).to(u.Myr).value
-        tlb_to_redz_interp = interp1d(tlb_grid, redz_grid)
+        redz_interp = np.linspace(0, self.zmax, 10000)
+        tlb_interp = cosmo.lookback_time(redz_interp).to(u.Myr).value
+        tlb_to_redz_interp = interp1d(tlb_interp, redz_interp)
         self.tlb_to_redz_interp = tlb_to_redz_interp
+
+        # create grid of potential formation times, uniform in lookback time
+        tlb_grid = np.linspace(cosmo.lookback_time(self.zmin), cosmo.lookback_time(self.zmax), int(N_redshift_grid)).to(u.Myr).value
+        redz_grid = tlb_to_redz_interp(tlb_grid)
         self.redz_grid = redz_grid
 
         # read metallicity of the population models
@@ -411,7 +429,7 @@ class StarFormationHistory:
             print("    determining formation efficiencies after applying filters")
         for Z in tqdm(pop_mets_str):
             dat_file = [x for x in os.listdir(os.path.join(pop_path, Z)) if 'dat' in x][0]
-            total_mass_sampled = float(pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='mass_stars').iloc[-1])
+            total_mass_sampled = float(np.asarray(pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='mass_stars'))[-1])
             bpp = pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='bpp')
             initC = pd.read_hdf(os.path.join(pop_path,Z,dat_file), key='initCond')
             # apply filters to bpp array, if specified
@@ -479,6 +497,10 @@ class StarFormationHistory:
 
         weight_array /= np.sum(weight_array)
         self.weight_array = weight_array
+        formation_efficiencies_dict = {}
+        for met, f in zip(pop_mets, formation_efficiencies):
+            formation_efficiencies_dict[met] = f
+        self.formation_efficiencies = formation_efficiencies_dict
 
 
     # --- Resampling method for cosmic --- #
@@ -701,10 +723,44 @@ class StarFormationHistory:
         self.resampled_pop = df
 
 
+    # --- Add in dimensionful units to each system in the resampled population [Mpc^-3 yr^-1] --- #
+    # NOTE: this is currently only implemented for Illustris resampling method!!!
+    def calculate_system_rates(self, method):
+        # Currently, this only works for populations resampled with Illustris
+        if method != 'illustris':
+            raise ValueError("Adding dimensionful rate contributions for each system is currently only supported for the Illustris population model!")
 
-    # --- Save to disk --- #
-    def save(self, output_path):
-        """
-        Resamples populations living at `pop_path` based on the drawn formation redshifts and metallicities
-        """
-        self.resampled_pop.to_hdf(output_path, key='underlying')
+        df = self.resampled_pop.copy()
+        df['weight'] = np.zeros(len(df))
+        # cycle through redshift bins
+        for idx, (zlow,zhigh) in tqdm(enumerate(zip(self.redshift_bins[:-1],self.redshift_bins[1:])), total=len(self.redshift_bins)-1):
+            # get systems that were born in this redshift bin
+            df_cut = df.loc[(df['z_ZAMS'] >= zlow) & (df['z_ZAMS'] < zhigh)]
+            if len(df_cut) == 0:
+                continue
+            # get metallicity CDF at this redshift
+            met_cdf = self.met_cdf_at_redz[idx]
+            # get total mass formed at all metallicities in this redshift bin [Msun Mpc^-3 (dt)^-1]
+            Mform_at_z = self.sfr_pts[idx]   # Msun Mpc^-3 yr^-1
+            # sort the unique Z values
+            met_at_z = np.sort(np.unique(df_cut.Z))
+            # evaluate metallicity grid in the CDF
+            met_cdf_eval = met_cdf(np.log10(met_at_z))
+            # take the midpoints between CDF evaluations and assign weights to each metallicity
+            met_cdf_eval = met_cdf_eval[:-1] + (met_cdf_eval[1:]-met_cdf_eval[:-1])/2
+            met_cdf_eval = np.concatenate([[0],met_cdf_eval,[1]])
+            met_weights = met_cdf_eval[1:] - met_cdf_eval[:-1]
+            # each unique metallicity at this redshift bin gets fractional star formation according to these weights
+            fSFR_per_met = met_weights * Mform_at_z   # [Msun Mpc^-3 yr^-1]
+            # find the CBC formation efficiency at each metallicity where there is a system
+            for idx, met in enumerate(met_at_z):
+                # get the mass turned into CBCs at this metallicity
+                frac_mass = self.formation_efficiencies[met] * fSFR_per_met[idx]
+                # split this fractional mass over all the systems at the metallicity
+                Nsys = len(df_cut.loc[df_cut['Z'] == met])
+                df_cut.loc[df_cut['Z'] == met, 'weight'] = frac_mass / Nsys
+
+            # update the weights for these systems in the full dataframe
+            df.update(df_cut)
+
+        self.resampled_pop = df

@@ -72,6 +72,17 @@ if args.verbose:
     print("\nResampling population models at {:s}...".format(args.population))
 SFH.resample_cosmic(args.Nresamp, args.population, pop_filters=args.filter, mergers_only=args.mergers_only, initC_only=args.initC_only, extra_info=args.extra_info, verbose=args.verbose)
 
+# --- Get dimensionful weights for each resampled system --- #
+if args.verbose:
+    print("\nCalculating dimensionful weights for each resampled system...")
+SFH.calculate_system_rates(args.method)
+#FIXME when drawing systems, we will want to divide SFRD by formation efficiency to get weights as well in units of Mpc^-3 yr^-1 for each system
+# 1. cycle through z bins
+# 2. select systems in each zbin (with special treatment for ones that don't have any systems)
+# 3. Get total (integrated over Z) SF for that bin
+# 4. Break down contribution from each system based on the metallicity CDF
+# 5. Get weight by multiplying by formation efficiency at that metallicity
+
 # --- Save to disk --- #
 if args.output_path:
     if args.verbose:
